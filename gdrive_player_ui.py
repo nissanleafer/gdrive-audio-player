@@ -1415,6 +1415,28 @@ def find_free_port(start_port=5050, max_attempts=100):
     raise RuntimeError(f"Could not find a free port in range {start_port}-{start_port + max_attempts}")
 
 
+def check_existing_server(start_port=5050, max_attempts=20):
+    """Check if our server is already running on any port."""
+    import socket
+    import urllib.request
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                result = s.connect_ex(('127.0.0.1', port))
+                if result == 0:
+                    # Port is open, check if it's our app
+                    try:
+                        req = urllib.request.urlopen(f'http://localhost:{port}/api/user', timeout=1)
+                        if req.status == 200:
+                            return port
+                    except:
+                        pass
+        except:
+            pass
+    return None
+
+
 # Global to store the chosen port
 server_port = 5050
 
@@ -1437,7 +1459,17 @@ def get_user_email(creds):
 
 
 def main():
-    global drive_service, user_email
+    global drive_service, user_email, server_port
+
+    # Check if already running
+    existing_port = check_existing_server()
+    if existing_port:
+        print("🎵 Google Drive Audio Player")
+        print("=" * 40)
+        print(f"✅ Already running on port {existing_port}")
+        print("🌐 Opening browser...")
+        webbrowser.open(f'http://localhost:{existing_port}')
+        return
 
     print("🎵 Google Drive Audio Player")
     print("=" * 40)
