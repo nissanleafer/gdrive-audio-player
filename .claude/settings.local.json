@@ -26,7 +26,19 @@
       "Bash(gh repo edit:*)",
       "Bash(gh repo:*)",
       "Bash(git remote set-url:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nSupport system default audio player as fallback\n\n- Use VLC if installed, otherwise fall back to system default\n- macOS: opens with Music or default M3U handler\n- Windows: uses default audio player\n- Linux: uses xdg-open\n- Updated UI text and README\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nSupport system default audio player as fallback\n\n- Use VLC if installed, otherwise fall back to system default\n- macOS: opens with Music or default M3U handler\n- Windows: uses default audio player\n- Linux: uses xdg-open\n- Updated UI text and README\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(ls:*)",
+      "Bash(gh release create:*)",
+      "Bash(ditto:*)",
+      "Bash(xcrun notarytool submit:*)",
+      "Bash(xcrun stapler:*)",
+      "Bash(hdiutil detach:*)",
+      "Bash(gh release upload:*)",
+      "Bash(gh release view:*)",
+      "Bash(\"/Applications/GDrive Player.app/Contents/MacOS/GDrive Player\")",
+      "Bash(mdfind:*)",
+      "Bash(\"/Users/rgestmac/Documents/git/my_projects/Simple/dist/notarize/GDrive Player.app/Contents/MacOS/GDrive Player\")",
+      "Bash(git commit:*)"
     ]
   }
 }

@@ -1402,11 +1402,28 @@ def api_open_downloads_folder():
     return jsonify({'success': True, 'path': str(DOWNLOAD_DIR)})
 
 
+def find_free_port(start_port=5050, max_attempts=100):
+    """Find an available port starting from start_port."""
+    import socket
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"Could not find a free port in range {start_port}-{start_port + max_attempts}")
+
+
+# Global to store the chosen port
+server_port = 5050
+
+
 def open_browser():
     """Open browser after short delay."""
     import time
     time.sleep(1)
-    webbrowser.open('http://localhost:5050')
+    webbrowser.open(f'http://localhost:{server_port}')
 
 
 def get_user_email(creds):
@@ -1451,13 +1468,17 @@ def main():
     print(f"✅ Connected as {user_email}!")
     print("🌐 Opening browser...")
 
+    # Find an available port
+    global server_port
+    server_port = find_free_port()
+
     # Open browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()
 
     # Start Flask server
-    print("   http://localhost:5050")
+    print(f"   http://localhost:{server_port}")
     print("\nPress Ctrl+C to quit\n")
-    app.run(port=5050, debug=False)
+    app.run(port=server_port, debug=False)
 
 
 if __name__ == '__main__':
