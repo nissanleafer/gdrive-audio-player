@@ -17,7 +17,16 @@
       "Bash(codesign:*)",
       "Bash(hdiutil create:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: Google Drive Audio Player\n\n- Web UI for browsing Google Drive audio files\n- Stream or download to VLC\n- Playlist management with local storage\n- Export playlists to Google Drive\n- Favorites for quick folder access\n- GitHub Actions for macOS/Windows builds\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(gh repo create:*)",
+      "Bash(gh run:*)",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd MIT License\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(gh repo edit:*)",
+      "Bash(gh repo:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nSupport system default audio player as fallback\n\n- Use VLC if installed, otherwise fall back to system default\n- macOS: opens with Music or default M3U handler\n- Windows: uses default audio player\n- Linux: uses xdg-open\n- Updated UI text and README\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

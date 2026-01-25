@@ -1,6 +1,6 @@
 # Google Drive Audio Player
 
-A web-based app to browse audio files from Google Drive and play them in VLC.
+A web-based app to browse audio files from Google Drive and play them in your favorite audio player.
 
 ## Features
 
@@ -11,12 +11,13 @@ A web-based app to browse audio files from Google Drive and play them in VLC.
 - **Download** - Download files for offline playback
 - Favorites for quick access to folders
 - Export playlists to Google Drive for mobile access
+- Works with VLC, Music (macOS), Windows Media Player, or any M3U-compatible player
 
 ## Requirements
 
 - Python 3.9+
-- VLC media player
 - Google account
+- Audio player (VLC recommended, or uses system default)
 
 ## Setup
 
@@ -46,7 +47,7 @@ pip install -r requirements.txt
    - Click "Create Credentials" > "OAuth client ID"
    - Choose "Desktop app"
    - Download the JSON file
-   - Rename it to `credentials.json` and place it in this folder
+   - Rename it to `credentials.json` and place it in `~/.gdrive-player/`
 
 ### 3. Run the app
 
@@ -65,11 +66,21 @@ The app will open in your browser at http://localhost:5050
    - **Stream** - Plays directly (requires internet)
    - **Download** - Downloads files first (works offline)
 5. **Save Playlist**: Save your selection for later
-6. **Export to Drive**: Save playlist to Google Drive for mobile VLC
+6. **Export to Drive**: Save playlist to Google Drive for mobile access
+
+## Supported Players
+
+- **VLC** (recommended) - Full support with loop playback
+- **Music** (macOS) - System default, opens M3U playlists
+- **Windows Media Player** - System default on Windows
+- **Any M3U-compatible player** - Falls back to system default
+
+If VLC is installed, it will be used automatically with loop mode enabled. Otherwise, the app opens playlists with your system's default audio player.
 
 ## File Locations
 
 - **Playlists & Downloads**: `~/Music/GDrive Playlists/`
+- **Credentials**: `~/.gdrive-player/credentials.json`
 - **Auth tokens**: `~/.gdrive-player/token.json`
 
 ## Troubleshooting
@@ -80,5 +91,9 @@ Add your Google account email as a test user in the OAuth consent screen setting
 ### Port 5050 in use
 Edit `gdrive_player_ui.py` and change the port number at the bottom of the file.
 
-### VLC not found
-Install VLC from https://www.videolan.org/vlc/
+### Streaming not working in default player
+Some players don't support streaming URLs. Use **Download** mode instead, or install VLC.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

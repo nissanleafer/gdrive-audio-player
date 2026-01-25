@@ -210,7 +210,7 @@ HTML_TEMPLATE = """
     <div class="header">
         <div class="header-left">
             <h1>🎵 Google Drive Audio Player</h1>
-            <p class="subtitle">Select audio files and play in VLC</p>
+            <p class="subtitle">Select audio files and play in your favorite player</p>
         </div>
         <div class="user-info" id="userInfo">Loading...</div>
     </div>
@@ -242,7 +242,7 @@ HTML_TEMPLATE = """
             <button id="downloadBtn" onclick="setMode('download')">Download</button>
         </div>
         <button class="btn-primary" id="playBtn" onclick="play()" disabled>
-            ▶ Play in VLC
+            ▶ Play
         </button>
         <button class="btn-secondary" id="saveLocalBtn" onclick="savePlaylistLocal()" disabled>
             Save Playlist
@@ -917,7 +917,7 @@ HTML_TEMPLATE = """
 
             const result = await response.json();
 
-            document.getElementById('playBtn').textContent = '▶ Play in VLC';
+            document.getElementById('playBtn').textContent = '▶ Play';
             document.getElementById('playBtn').disabled = false;
 
             if (!result.success) {
@@ -1346,7 +1346,7 @@ def api_play():
                     pf.write(f"#EXTINF:-1,{f['name']}\n")
                     pf.write(f"https://drive.google.com/uc?export=download&id={f['id']}\n")
 
-        # Open VLC
+        # Try VLC first, fall back to system default player
         vlc_paths = [
             '/Applications/VLC.app/Contents/MacOS/VLC',
             '/usr/bin/vlc',
@@ -1355,15 +1355,32 @@ def api_play():
 
         vlc_cmd = None
         for path in vlc_paths:
-            if path == 'vlc' or os.path.exists(path):
+            if path == 'vlc':
+                # Check if vlc is in PATH
+                import shutil
+                if shutil.which('vlc'):
+                    vlc_cmd = path
+                    break
+            elif os.path.exists(path):
                 vlc_cmd = path
                 break
 
-        if not vlc_cmd:
-            return jsonify({'success': False, 'error': 'VLC not found. Please install VLC.'})
-
-        subprocess.Popen([vlc_cmd, '--loop', str(playlist_path)])
-        return jsonify({'success': True})
+        if vlc_cmd:
+            subprocess.Popen([vlc_cmd, '--loop', str(playlist_path)])
+            return jsonify({'success': True, 'player': 'VLC'})
+        else:
+            # Fall back to system default player
+            import platform
+            system = platform.system()
+            if system == 'Darwin':  # macOS
+                subprocess.Popen(['open', str(playlist_path)])
+                return jsonify({'success': True, 'player': 'default'})
+            elif system == 'Windows':
+                os.startfile(str(playlist_path))
+                return jsonify({'success': True, 'player': 'default'})
+            else:  # Linux
+                subprocess.Popen(['xdg-open', str(playlist_path)])
+                return jsonify({'success': True, 'player': 'default'})
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
