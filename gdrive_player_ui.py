@@ -220,11 +220,30 @@ HTML_TEMPLATE = """
            style="width: 100%; padding: 12px 15px; font-size: 16px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px;">
 
     <div class="view-toggle">
-        <button id="browseBtn" class="active" onclick="setView('browse')">My Drive</button>
-        <button id="sharedBtn" onclick="setView('shared')">Shared with Me</button>
-        <button id="favoritesBtn" onclick="setView('favorites')">Favorites</button>
-        <button id="playlistsBtn" onclick="setView('playlists')">Playlists</button>
-        <button id="allAudioBtn" onclick="setView('all')">All Audio</button>
+        <button id="browseBtn" class="active" onclick="setView('browse')">📁 My Drive</button>
+        <button id="sharedBtn" onclick="setView('shared')">🤝 Shared</button>
+        <button id="favoritesBtn" onclick="setView('favorites')">⭐ Favorites</button>
+        <button id="playlistsBtn" onclick="setView('playlists')">🎵 Playlists</button>
+        <button id="allAudioBtn" onclick="setView('all')">🎧 All Audio</button>
+    </div>
+
+    <div class="controls" id="fileControls">
+        <span class="selected-count" id="selectedCount">0 selected</span>
+        <div class="mode-toggle">
+            <button id="streamBtn" class="active" onclick="setMode('stream')">📡 Stream</button>
+            <button id="downloadBtn" onclick="setMode('download')">💾 Download</button>
+        </div>
+        <button class="btn-primary" id="playBtn" onclick="play()" disabled>
+            ▶️ Play
+        </button>
+        <button class="btn-secondary" id="saveLocalBtn" onclick="savePlaylistLocal()" disabled>
+            📋 Save Playlist
+        </button>
+        <button class="btn-secondary" id="saveBtn" onclick="savePlaylistToDrive()" disabled>
+            ☁️ Export to Drive
+        </button>
+        <button class="btn-secondary" onclick="selectAll()">☑️ Select All</button>
+        <button class="btn-secondary" onclick="clearSelection()">✖️ Clear</button>
     </div>
 
     <div class="breadcrumb" id="breadcrumb">
@@ -235,25 +254,9 @@ HTML_TEMPLATE = """
         <div class="loading">Loading...</div>
     </div>
 
-    <div class="controls">
-        <span class="selected-count" id="selectedCount">0 selected</span>
-        <div class="mode-toggle">
-            <button id="streamBtn" class="active" onclick="setMode('stream')">Stream</button>
-            <button id="downloadBtn" onclick="setMode('download')">Download</button>
-        </div>
-        <button class="btn-primary" id="playBtn" onclick="play()" disabled>
-            ▶ Play
-        </button>
-        <button class="btn-secondary" id="saveLocalBtn" onclick="savePlaylistLocal()" disabled>
-            Save Playlist
-        </button>
-        <button class="btn-secondary" id="saveBtn" onclick="savePlaylistToDrive()" disabled>
-            Export to Drive
-        </button>
-        <button class="btn-secondary" onclick="selectAll()">Select All</button>
-        <button class="btn-secondary" onclick="clearSelection()">Clear</button>
-        <button class="btn-secondary" onclick="openPlaylistsFolder()">Open Playlists Folder</button>
-        <button class="btn-secondary" onclick="openDownloadsFolder()">Open Downloads Folder</button>
+    <div style="text-align: center; margin-top: 10px; font-size: 12px;">
+        <a href="#" onclick="openPlaylistsFolder(); return false;" style="color: #666; margin-right: 15px;">📂 Playlists Folder</a>
+        <a href="#" onclick="openDownloadsFolder(); return false;" style="color: #666;">📂 Downloads Folder</a>
     </div>
 
     <script>
@@ -305,22 +308,26 @@ HTML_TEMPLATE = """
                 loadAllAudio();
             } else if (view === 'shared') {
                 document.getElementById('searchBox').placeholder = 'Search shared files...';
+                document.getElementById('fileControls').style.display = 'flex';
                 currentFolder = null;
                 folderStack = [];
                 updateBreadcrumb();
                 loadFiles();
             } else if (view === 'favorites') {
                 document.getElementById('searchBox').placeholder = 'Search favorites...';
+                document.getElementById('fileControls').style.display = 'flex';
                 currentFolder = null;
                 folderStack = [];
                 updateBreadcrumb();
                 loadFavorites();
             } else if (view === 'playlists') {
                 document.getElementById('searchBox').placeholder = 'Search playlists...';
+                document.getElementById('fileControls').style.display = 'none';
                 currentFolder = null;
                 folderStack = [];
                 loadPlaylists();
             } else {
+                document.getElementById('fileControls').style.display = 'flex';
                 document.getElementById('searchBox').placeholder = 'Search files and folders...';
                 currentFolder = null;
                 folderStack = [];
@@ -409,10 +416,10 @@ HTML_TEMPLATE = """
                 html += '<div class="file-item" style="position: relative;">' +
                         '<span class="file-icon">🎵</span>' +
                         '<span class="file-name" onclick="loadPlaylistFiles(' + index + ')" style="cursor: pointer; flex: 1;">' + pl.name + ' (' + pl.files.length + ' tracks)</span>' +
-                        '<button onclick="playPlaylistMode(' + index + ', \\'stream\\')" style="padding: 3px 8px; margin-right: 5px; cursor: pointer;">Stream</button>' +
-                        '<button onclick="playPlaylistMode(' + index + ', \\'download\\')" style="padding: 3px 8px; margin-right: 5px; cursor: pointer;">Download</button>' +
-                        '<span onclick="exportPlaylist(' + index + ')" style="cursor: pointer; padding: 5px 10px;" title="Save to Drive">💾</span>' +
-                        '<span onclick="deletePlaylist(' + index + ')" style="cursor: pointer; padding: 5px 10px;" title="Delete">✕</span>' +
+                        '<button onclick="playPlaylistMode(' + index + ', \\'stream\\')" style="padding: 3px 8px; margin-right: 5px; cursor: pointer;" title="Stream from cloud">📡</button>' +
+                        '<button onclick="playPlaylistMode(' + index + ', \\'download\\')" style="padding: 3px 8px; margin-right: 5px; cursor: pointer;" title="Download and play">💾</button>' +
+                        '<span onclick="exportPlaylist(' + index + ')" style="cursor: pointer; padding: 5px 10px;" title="Export to Google Drive">☁️</span>' +
+                        '<span onclick="deletePlaylist(' + index + ')" style="cursor: pointer; padding: 5px 10px; color: #e74c3c;" title="Delete playlist">🗑️</span>' +
                         '</div>';
             });
 
