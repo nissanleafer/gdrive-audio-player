@@ -1427,7 +1427,7 @@ def check_existing_server(start_port=5050, max_attempts=20):
                 if result == 0:
                     # Port is open, check if it's our app
                     try:
-                        req = urllib.request.urlopen(f'http://localhost:{port}/api/user', timeout=1)
+                        req = urllib.request.urlopen(f'http://localhost:{port}/api/user', timeout=2)
                         if req.status == 200:
                             return port
                     except:
@@ -1435,6 +1435,28 @@ def check_existing_server(start_port=5050, max_attempts=20):
         except:
             pass
     return None
+
+
+def kill_stale_instances():
+    """Kill any stale GDrive Player instances."""
+    import signal
+    try:
+        # Find and kill old instances
+        result = subprocess.run(['pgrep', '-f', 'GDrive Player'], capture_output=True, text=True)
+        if result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            my_pid = str(os.getpid())
+            for pid in pids:
+                if pid and pid != my_pid:
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                    except:
+                        pass
+            # Wait a moment for processes to die
+            import time
+            time.sleep(1)
+    except:
+        pass
 
 
 # Global to store the chosen port
@@ -1461,7 +1483,7 @@ def get_user_email(creds):
 def main():
     global drive_service, user_email, server_port
 
-    # Check if already running
+    # Check if already running with a healthy server
     existing_port = check_existing_server()
     if existing_port:
         print("🎵 Google Drive Audio Player")
@@ -1470,6 +1492,9 @@ def main():
         print("🌐 Opening browser...")
         webbrowser.open(f'http://localhost:{existing_port}')
         return
+
+    # No healthy server found - kill any stale instances
+    kill_stale_instances()
 
     print("🎵 Google Drive Audio Player")
     print("=" * 40)

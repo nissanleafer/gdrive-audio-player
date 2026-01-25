@@ -38,7 +38,9 @@
       "Bash(\"/Applications/GDrive Player.app/Contents/MacOS/GDrive Player\")",
       "Bash(mdfind:*)",
       "Bash(\"/Users/rgestmac/Documents/git/my_projects/Simple/dist/notarize/GDrive Player.app/Contents/MacOS/GDrive Player\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(iconutil:*)",
+      "Bash(xargs -I {} sh -c '\"\"{}/Contents/MacOS/GDrive Player\"\" 2>&1')"
     ]
   }
 }
