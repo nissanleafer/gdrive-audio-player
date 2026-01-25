@@ -59,7 +59,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='GDrive Player.app',
-    icon=None,
+    icon='AppIcon.icns',
     bundle_identifier='com.gdriveplayer.app',
     info_plist={
         'CFBundleName': 'GDrive Player',
