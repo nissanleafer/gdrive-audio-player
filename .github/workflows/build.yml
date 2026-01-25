@@ -1,0 +1,86 @@
+name: Build Apps
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build macOS app
+        run: |
+          pyinstaller GDrivePlayer.spec --noconfirm
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "GDrive Player" -srcfolder "dist/GDrive Player.app" -ov -format UDZO "dist/GDrive-Player-macOS.dmg"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDrive-Player-macOS
+          path: dist/GDrive-Player-macOS.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows exe
+        run: |
+          pyinstaller --name "GDrive Player" --onefile --windowed --add-data "gdrive_player_ui.py;." --hidden-import google.auth.transport.requests --hidden-import google.oauth2.credentials --hidden-import google_auth_oauthlib.flow --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import flask gdrive_player_ui.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDrive-Player-Windows
+          path: dist/GDrive Player.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            GDrive-Player-macOS/GDrive-Player-macOS.dmg
+            GDrive-Player-Windows/GDrive Player.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

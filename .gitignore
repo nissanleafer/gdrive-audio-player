@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# Google credentials (NEVER commit these)
+credentials.json
+token.json
+
+# Build artifacts
+build/
+dist/
+*.app
+# Keep GDrivePlayer.spec for reproducible builds
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

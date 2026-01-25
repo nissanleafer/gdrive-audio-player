@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./setup.sh)",
+      "Bash(source:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(echo:*)",
+      "Bash(lsof:*)",
+      "Bash(python gdrive_player_ui.py:*)",
+      "Bash(pyinstaller:*)",
+      "Bash(security find-identity:*)",
+      "Bash(codesign:*)",
+      "Bash(hdiutil create:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
