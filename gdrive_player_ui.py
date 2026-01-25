@@ -20,6 +20,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
+VERSION = "1.3.4"
+
 SCOPES = [
     'https://www.googleapis.com/auth/drive',  # Full access to create playlist files
     'https://www.googleapis.com/auth/userinfo.email',
@@ -210,7 +212,7 @@ HTML_TEMPLATE = """
     <div class="header">
         <div class="header-left">
             <h1>🎵 Google Drive Audio Player</h1>
-            <p class="subtitle">Select audio files and play in your favorite player</p>
+            <p class="subtitle">Select audio files and play in your favorite player <span style="color: #999; font-size: 12px;">v{{ version }}</span></p>
         </div>
         <div class="user-info" id="userInfo">Loading...</div>
     </div>
@@ -979,7 +981,7 @@ def format_size(size_bytes):
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE, version=VERSION)
 
 
 @app.route('/api/files')
