@@ -20,7 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-VERSION = "1.3.4"
+VERSION = "1.3.5"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',  # Full access to create playlist files
@@ -1447,11 +1447,15 @@ def check_existing_server(start_port=5050, max_attempts=20):
 
 
 def kill_stale_instances():
-    """Kill any stale GDrive Player instances."""
+    """Kill any stale GDrive Player server instances."""
     import signal
     try:
-        # Find and kill old instances
-        result = subprocess.run(['pgrep', '-f', 'GDrive Player'], capture_output=True, text=True)
+        # Only kill Python processes running this specific script
+        script_name = os.path.basename(__file__)
+        result = subprocess.run(
+            ['pgrep', '-f', f'python.*{script_name}'],
+            capture_output=True, text=True
+        )
         if result.stdout.strip():
             pids = result.stdout.strip().split('\n')
             my_pid = str(os.getpid())
@@ -1470,6 +1474,18 @@ def kill_stale_instances():
 
 # Global to store the chosen port
 server_port = 5050
+
+
+def setup_signal_handlers():
+    """Set up signal handlers for graceful shutdown."""
+    import signal
+
+    def signal_handler(signum, frame):
+        print("\n🛑 Shutting down...")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
 
 def open_browser():
@@ -1491,6 +1507,9 @@ def get_user_email(creds):
 
 def main():
     global drive_service, user_email, server_port
+
+    # Set up signal handlers for graceful shutdown (fixes macOS shutdown hang)
+    setup_signal_handlers()
 
     # Check if already running with a healthy server
     existing_port = check_existing_server()
