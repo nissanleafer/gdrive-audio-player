@@ -20,7 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-VERSION = "1.3.6"
+VERSION = "1.3.7"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',  # Full access to create playlist files
@@ -33,11 +33,19 @@ USER_DATA_DIR = Path.home() / '.gdrive-player'
 
 # Look for credentials.json in multiple locations
 def find_credentials():
-    locations = [
+    locations = []
+
+    # Check PyInstaller bundle first (for packaged app)
+    if getattr(sys, '_MEIPASS', None):
+        locations.append(Path(sys._MEIPASS) / 'credentials.json')
+
+    # Then check other locations
+    locations.extend([
         USER_DATA_DIR / 'credentials.json',  # ~/.gdrive-player/credentials.json
         APP_DIR / 'credentials.json',         # Next to the script
         Path.cwd() / 'credentials.json',      # Current directory
-    ]
+    ])
+
     for loc in locations:
         if loc.exists():
             return loc

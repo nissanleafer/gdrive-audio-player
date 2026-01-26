@@ -6,7 +6,7 @@ a = Analysis(
     ['gdrive_player_ui.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('credentials.json', '.')],
     hiddenimports=[
         'google.auth.transport.requests',
         'google.oauth2.credentials',

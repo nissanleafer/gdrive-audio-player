@@ -26,6 +26,9 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Create credentials.json
+        run: echo "${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}" | base64 -d > credentials.json
+
       - name: Build macOS app
         run: |
           pyinstaller GDrivePlayer.spec --noconfirm
@@ -55,6 +58,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
+
+      - name: Create credentials.json
+        run: |
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}")) | Out-File -FilePath credentials.json -Encoding UTF8
+        shell: pwsh
 
       - name: Build Windows exe
         run: |
