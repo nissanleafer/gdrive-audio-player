@@ -20,7 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-VERSION = "1.3.5"
+VERSION = "1.3.6"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',  # Full access to create playlist files
@@ -1479,13 +1479,16 @@ server_port = 5050
 def setup_signal_handlers():
     """Set up signal handlers for graceful shutdown."""
     import signal
+    import platform
 
     def signal_handler(signum, frame):
         print("\n🛑 Shutting down...")
         sys.exit(0)
 
-    signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+    # SIGTERM only exists on Unix
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGTERM, signal_handler)
 
 
 def open_browser():
