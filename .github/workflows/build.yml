@@ -58,7 +58,7 @@ jobs:
 
       - name: Build Windows exe
         run: |
-          pyinstaller --name "GDrive Player" --onefile --windowed --add-data "gdrive_player_ui.py;." --hidden-import google.auth.transport.requests --hidden-import google.oauth2.credentials --hidden-import google_auth_oauthlib.flow --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import flask gdrive_player_ui.py
+          pyinstaller GDrivePlayer-Windows.spec --noconfirm
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
