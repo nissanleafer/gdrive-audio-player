@@ -9,6 +9,8 @@ env/
 
 # Google credentials (NEVER commit these)
 credentials.json
+credentials_web.json
+client_secret_*.json
 token.json
 
 # Build artifacts
