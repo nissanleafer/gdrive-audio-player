@@ -20,7 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-VERSION = "1.3.7"
+VERSION = "1.3.8"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',  # Full access to create playlist files
@@ -1491,7 +1491,7 @@ def setup_signal_handlers():
 
     def signal_handler(signum, frame):
         print("\n🛑 Shutting down...")
-        sys.exit(0)
+        os._exit(0)  # Force immediate exit - sys.exit() can be caught by Flask
 
     signal.signal(signal.SIGINT, signal_handler)
     # SIGTERM only exists on Unix
