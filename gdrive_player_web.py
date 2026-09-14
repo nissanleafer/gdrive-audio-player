@@ -45,6 +45,16 @@ if SECRET_KEY_FILE.exists():
 else:
     app.secret_key = secrets.token_hex(32)
     SECRET_KEY_FILE.write_text(app.secret_key)
+    os.chmod(SECRET_KEY_FILE, 0o600)  # Restrict permissions
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 # Ensure tokens directory exists
 TOKENS_DIR.mkdir(exist_ok=True)
@@ -75,6 +85,27 @@ def save_user_playlists(playlists):
     if pfile:
         pfile.write_text(json.dumps(playlists, indent=2))
 
+def get_user_favorites_file():
+    """Get the favorites file for the current user."""
+    if 'user_email' not in session:
+        return None
+    import hashlib
+    email_hash = hashlib.md5(session['user_email'].encode()).hexdigest()
+    return PLAYLISTS_DIR / f'{email_hash}_favorites.json'
+
+def load_user_favorites():
+    """Load favorites for current user."""
+    ffile = get_user_favorites_file()
+    if ffile and ffile.exists():
+        return json.loads(ffile.read_text())
+    return []
+
+def save_user_favorites(favorites):
+    """Save favorites for current user."""
+    ffile = get_user_favorites_file()
+    if ffile:
+        ffile.write_text(json.dumps(favorites, indent=2))
+
 # Stream tokens for VLC/external players (token -> credentials data)
 import time
 STREAM_TOKENS = {}
@@ -95,6 +126,7 @@ def load_stream_tokens():
 def save_stream_tokens():
     """Save stream tokens to file."""
     STREAM_TOKENS_FILE.write_text(json.dumps(STREAM_TOKENS))
+    os.chmod(STREAM_TOKENS_FILE, 0o600)  # Restrict permissions
 
 def create_stream_token(credentials_data):
     """Create a token for streaming without session auth (valid for 24 hours)."""
@@ -123,6 +155,23 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_email' not in session:
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_csrf_token():
+    """Get or create CSRF token for current session."""
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return session['csrf_token']
+
+def csrf_protected(f):
+    """Decorator to require valid CSRF token for POST/DELETE requests."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if request.method in ['POST', 'DELETE']:
+            token = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token')
+            if not token or token != session.get('csrf_token'):
+                return jsonify({'error': 'Invalid CSRF token'}), 403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -327,6 +376,28 @@ HTML_TEMPLATE = """
 
     <input type="text" class="search-box" id="search" placeholder="Search for audio files..." oninput="searchFiles(this.value)">
 
+    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+        <button class="btn" id="btnMyDrive" onclick="switchToMyDrive()" style="background: #34a853;">📁 My Drive</button>
+        <button class="btn" id="btnShared" onclick="switchToShared()">🔗 Shared with me</button>
+        <button class="btn" onclick="toggleFavorites()">⭐ Favorites</button>
+        <button class="btn" onclick="toggleGoToFolder()">🔗 Go to Folder</button>
+        <button class="btn" onclick="addCurrentToFavorites()" id="btnAddFav" style="display:none;">➕ Add to Favorites</button>
+    </div>
+
+    <div id="goToFolderPanel" style="display: none; background: #16213e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+        <h3 style="margin: 0 0 10px 0;">🔗 Go to Folder</h3>
+        <p style="color: #888; font-size: 0.9em; margin: 0 0 10px 0;">Paste a Google Drive folder URL or folder ID:</p>
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="folderUrlInput" placeholder="https://drive.google.com/drive/folders/... or folder ID" style="flex: 1; padding: 10px; border-radius: 4px; border: 1px solid #333; background: #1a1a2e; color: #fff;">
+            <button class="btn" onclick="goToFolderUrl()">Go</button>
+        </div>
+    </div>
+
+    <div id="favoritesPanel" style="display: none; background: #16213e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+        <h3 style="margin: 0 0 10px 0;">⭐ Favorite Folders</h3>
+        <div id="favoritesList"><div class="loading">No favorites yet</div></div>
+    </div>
+
     <div class="breadcrumb" id="breadcrumb">
         <a href="#" onclick="loadFolder('root'); return false;">My Drive</a>
     </div>
@@ -347,7 +418,9 @@ HTML_TEMPLATE = """
         <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
             <button class="btn btn-play" onclick="playPlaylist()">▶️ Play All</button>
             <button class="btn" onclick="downloadPlaylist()">📥 M3U</button>
+            <button class="btn" onclick="downloadPublicPlaylist()">🌐 Public M3U</button>
             <button class="btn" onclick="downloadAllFiles()">⬇️ Download All</button>
+            <button class="btn" onclick="downloadPublicZip(event)">📦 Public ZIP</button>
             <button class="btn" onclick="clearPlaylist()">🗑️ Clear</button>
         </div>
     </div>
@@ -373,6 +446,28 @@ HTML_TEMPLATE = """
         let playlist = [];
         let folderStack = [{id: 'root', name: 'My Drive'}];
         let currentTrackIndex = 0;
+        let currentMode = 'mydrive';  // 'mydrive' or 'shared'
+        let favorites = [];
+        const csrfToken = '{{ csrf_token }}';
+
+        // Helper for fetch with CSRF token
+        function fetchWithCsrf(url, options = {}) {
+            options.headers = options.headers || {};
+            options.headers['X-CSRF-Token'] = csrfToken;
+            return fetch(url, options);
+        }
+
+        // HTML escape function to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Escape for use in JS string literals within HTML attributes
+        function escapeJs(text) {
+            return text.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/"/g, '\\\\"');
+        }
 
         function loadFolder(folderId, folderName) {
             currentFolder = folderId;
@@ -406,7 +501,7 @@ HTML_TEMPLATE = """
         function updateBreadcrumb() {
             const bc = document.getElementById('breadcrumb');
             bc.innerHTML = folderStack.map((f, i) =>
-                `<a href="#" onclick="loadFolder('${f.id}'); return false;">${f.name}</a>`
+                `<a href="#" onclick="loadFolder('${escapeJs(f.id)}'); return false;">${escapeHtml(f.name)}</a>`
             ).join(' / ');
         }
 
@@ -416,7 +511,11 @@ HTML_TEMPLATE = """
                 return;
             }
             document.getElementById('fileList').innerHTML = '<div class="loading">Searching...</div>';
-            fetch('/api/search?q=' + encodeURIComponent(query))
+            let searchUrl = '/api/search?q=' + encodeURIComponent(query);
+            if (currentFolder && currentFolder !== 'root' && currentFolder !== 'shared') {
+                searchUrl += '&folder=' + encodeURIComponent(currentFolder);
+            }
+            fetch(searchUrl)
                 .then(r => r.json())
                 .then(data => {
                     renderFiles(data.files || []);
@@ -448,10 +547,13 @@ HTML_TEMPLATE = """
                 const isFolder = f.mimeType === 'application/vnd.google-apps.folder';
                 const isAudio = f.mimeType && f.mimeType.startsWith('audio/');
                 const meta = isAudio ? [formatSize(f.size), formatDate(f.modifiedTime)].filter(x => x).join(' • ') : '';
-                return `<div class="file-item" onclick="${isFolder ? `loadFolder('${f.id}', '${f.name.replace(/'/g, "\\'")}')` : isAudio ? `addToPlaylist('${f.id}', '${f.name.replace(/'/g, "\\'")}')` : ''}">
+                const safeName = escapeHtml(f.name);
+                const safeNameJs = escapeJs(f.name);
+                const safeId = escapeJs(f.id);
+                return `<div class="file-item" onclick="${isFolder ? `loadFolder('${safeId}', '${safeNameJs}')` : isAudio ? `addToPlaylist('${safeId}', '${safeNameJs}')` : ''}">
                     <span class="file-icon ${isFolder ? 'folder' : isAudio ? 'audio' : ''}">${isFolder ? '📁' : isAudio ? '🎵' : '📄'}</span>
-                    <span class="file-name"><span class="name">${f.name}</span>${meta ? '<span class="meta">' + meta + '</span>' : ''}</span>
-                    ${isAudio ? '<button class="btn" onclick="event.stopPropagation(); downloadFile(\\''+f.id+'\\')">⬇️</button><button class="btn" onclick="event.stopPropagation(); addToPlaylist(\\''+f.id+'\\', \\''+f.name.replace(/'/g, "\\'")+'\\')"">+ Add</button>' : ''}
+                    <span class="file-name"><span class="name">${safeName}</span>${meta ? '<span class="meta">' + meta + '</span>' : ''}</span>
+                    ${isAudio ? '<button class="btn" onclick="event.stopPropagation(); downloadFile(\\''+safeId+'\\')">⬇️</button><button class="btn" onclick="event.stopPropagation(); addToPlaylist(\\''+safeId+'\\', \\''+safeNameJs+'\\')"">+ Add</button>' : ''}
                 </div>`;
             }).join('');
         }
@@ -466,19 +568,38 @@ HTML_TEMPLATE = """
                 return;
             }
             const name = document.getElementById('playlistName').value || 'playlist';
-            fetch('/api/download-playlist', {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Downloading...';
+
+            fetchWithCsrf('/api/download-playlist', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name: name, tracks: playlist})
             })
-            .then(r => r.blob())
+            .then(r => {
+                if (!r.ok) {
+                    return r.json().then(data => { throw new Error(data.error || 'Download failed'); });
+                }
+                return r.blob();
+            })
             .then(blob => {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = name + '.zip';
+                document.body.appendChild(a);
                 a.click();
+                document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+                alert('✅ Download complete: ' + name + '.zip');
+            })
+            .catch(err => {
+                alert('Download error: ' + err.message);
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = '⬇️ Download All';
             });
         }
 
@@ -530,6 +651,67 @@ HTML_TEMPLATE = """
                 });
         }
 
+        function downloadPublicZip(event) {
+            if (playlist.length === 0) {
+                alert('Playlist is empty');
+                return;
+            }
+            const name = document.getElementById('playlistName').value || 'playlist';
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Downloading...';
+
+            fetch('/api/public-zip', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: name, tracks: playlist})
+            })
+            .then(r => {
+                if (!r.ok) {
+                    return r.json().then(data => { throw new Error(data.error || 'Download failed'); });
+                }
+                return r.blob();
+            })
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = name + '-public.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                alert('✅ Download complete: ' + name + '-public.zip');
+            })
+            .catch(err => {
+                alert('Download error: ' + err.message);
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = '📦 Public ZIP';
+            });
+        }
+
+        function downloadPublicPlaylist() {
+            if (playlist.length === 0) {
+                alert('Playlist is empty');
+                return;
+            }
+            const name = document.getElementById('playlistName').value || 'playlist';
+            let m3u = '#EXTM3U\\n';
+            playlist.forEach(p => {
+                m3u += '#EXTINF:-1,' + p.name + '\\n';
+                m3u += 'https://drive.google.com/uc?id=' + p.id + '\\n';
+            });
+            const blob = new Blob([m3u], {type: 'audio/x-mpegurl'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name + '-public.m3u';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
         function savePlaylist() {
             const name = document.getElementById('playlistName').value.trim();
             if (!name) {
@@ -540,7 +722,7 @@ HTML_TEMPLATE = """
                 alert('Playlist is empty');
                 return;
             }
-            fetch('/api/playlists', {
+            fetchWithCsrf('/api/playlists', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name: name, tracks: playlist})
@@ -573,9 +755,11 @@ HTML_TEMPLATE = """
             }
             container.innerHTML = names.map(name => {
                 const count = playlists[name].length;
+                const safeName = escapeHtml(name);
+                const safeNameJs = escapeJs(name);
                 return `<div class="playlist-item">
-                    <span onclick="loadPlaylist('${name.replace(/'/g, "\\'")}');" style="cursor:pointer; flex:1;">📋 ${name} (${count} tracks)</span>
-                    <button onclick="deletePlaylist('${name.replace(/'/g, "\\'")}')">✕</button>
+                    <span onclick="loadPlaylist('${safeNameJs}');" style="cursor:pointer; flex:1;">📋 ${safeName} (${count} tracks)</span>
+                    <button onclick="deletePlaylist('${safeNameJs}')">✕</button>
                 </div>`;
             }).join('');
         }
@@ -594,7 +778,7 @@ HTML_TEMPLATE = """
 
         function deletePlaylist(name) {
             if (!confirm('Delete playlist "' + name + '"?')) return;
-            fetch('/api/playlists/' + encodeURIComponent(name), {method: 'DELETE'})
+            fetchWithCsrf('/api/playlists/' + encodeURIComponent(name), {method: 'DELETE'})
                 .then(r => r.json())
                 .then(() => loadSavedPlaylists());
         }
@@ -603,8 +787,8 @@ HTML_TEMPLATE = """
             document.getElementById('playlistCount').textContent = playlist.length;
             document.getElementById('playlistItems').innerHTML = playlist.map(p =>
                 `<div class="playlist-item">
-                    <span>🎵 ${p.name}</span>
-                    <button onclick="removeFromPlaylist('${p.id}')">✕</button>
+                    <span>🎵 ${escapeHtml(p.name)}</span>
+                    <button onclick="removeFromPlaylist('${escapeJs(p.id)}')">✕</button>
                 </div>`
             ).join('');
         }
@@ -622,7 +806,7 @@ HTML_TEMPLATE = """
             }
             const track = playlist[index];
             document.getElementById('nowPlaying').style.display = 'block';
-            document.getElementById('nowPlayingText').textContent = 'Now Playing: ' + track.name;
+            document.getElementById('nowPlayingText').textContent = 'Now Playing: ' + track.name;  // textContent is safe
 
             const audio = document.getElementById('audioPlayer');
             audio.src = '/api/stream/' + track.id;
@@ -658,9 +842,167 @@ HTML_TEMPLATE = """
             }
         }
 
+        // Favorites functions
+        function loadFavorites() {
+            fetch('/api/favorites')
+                .then(r => r.json())
+                .then(data => {
+                    favorites = data.favorites || [];
+                    renderFavorites();
+                });
+        }
+
+        function renderFavorites() {
+            const container = document.getElementById('favoritesList');
+            if (favorites.length === 0) {
+                container.innerHTML = '<div style="color: #888; padding: 10px;">No favorites yet. Navigate to a folder and click "Add to Favorites".</div>';
+                return;
+            }
+            container.innerHTML = favorites.map((f, idx) =>
+                `<div class="playlist-item">
+                    <span onclick="goToFavorite('${escapeJs(f.id)}', '${escapeJs(f.name)}', '${escapeJs(f.mode || 'mydrive')}');" style="cursor:pointer; flex:1;">📁 ${escapeHtml(f.name)}</span>
+                    <button onclick="removeFavorite(${idx})">✕</button>
+                </div>`
+            ).join('');
+        }
+
+        function toggleFavorites() {
+            const panel = document.getElementById('favoritesPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function addCurrentToFavorites() {
+            if (currentFolder === 'root' || currentFolder === 'shared') {
+                alert('Cannot add root folders to favorites');
+                return;
+            }
+            const currentName = folderStack[folderStack.length - 1]?.name || 'Unknown';
+            if (favorites.find(f => f.id === currentFolder)) {
+                alert('Already in favorites');
+                return;
+            }
+            favorites.push({id: currentFolder, name: currentName, mode: currentMode});
+            fetchWithCsrf('/api/favorites', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({favorites: favorites})
+            }).then(() => {
+                renderFavorites();
+                alert('Added to favorites!');
+            });
+        }
+
+        function removeFavorite(idx) {
+            favorites.splice(idx, 1);
+            fetchWithCsrf('/api/favorites', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({favorites: favorites})
+            }).then(() => renderFavorites());
+        }
+
+        function goToFavorite(id, name, mode) {
+            if (mode === 'shared') {
+                switchToShared();
+            } else {
+                switchToMyDrive();
+            }
+            folderStack = [{id: mode === 'shared' ? 'shared' : 'root', name: mode === 'shared' ? 'Shared with me' : 'My Drive'}, {id: id, name: name}];
+            loadFolder(id, name);
+            document.getElementById('favoritesPanel').style.display = 'none';
+        }
+
+        function toggleGoToFolder() {
+            const panel = document.getElementById('goToFolderPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function goToFolderUrl() {
+            const input = document.getElementById('folderUrlInput').value.trim();
+            if (!input) {
+                alert('Please enter a folder URL or ID');
+                return;
+            }
+
+            // Extract folder ID from URL or use as-is
+            let folderId = input;
+            const urlMatch = input.match(/folders\/([a-zA-Z0-9_-]+)/);
+            if (urlMatch) {
+                folderId = urlMatch[1];
+            }
+
+            console.log('Going to folder:', folderId);
+
+            // Fetch folder info to get its name
+            fetch('/api/folder-info/' + encodeURIComponent(folderId))
+                .then(r => {
+                    console.log('Response status:', r.status);
+                    return r.json();
+                })
+                .then(data => {
+                    console.log('Folder data:', data);
+                    if (data.error) {
+                        alert('Error: ' + data.error);
+                        return;
+                    }
+                    const folderName = data.name || 'Shared Folder';
+                    currentMode = 'shared';
+                    document.getElementById('btnShared').style.background = '#34a853';
+                    document.getElementById('btnMyDrive').style.background = '#4285f4';
+                    folderStack = [{id: 'shared', name: 'Shared'}, {id: folderId, name: folderName}];
+                    loadFolder(folderId, folderName);
+                    document.getElementById('goToFolderPanel').style.display = 'none';
+                    document.getElementById('folderUrlInput').value = '';
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                    alert('Error accessing folder: ' + err);
+                });
+        }
+
+        function switchToMyDrive() {
+            currentMode = 'mydrive';
+            document.getElementById('btnMyDrive').style.background = '#34a853';
+            document.getElementById('btnShared').style.background = '#4285f4';
+            folderStack = [{id: 'root', name: 'My Drive'}];
+            loadFolder('root');
+        }
+
+        function switchToShared() {
+            currentMode = 'shared';
+            document.getElementById('btnShared').style.background = '#34a853';
+            document.getElementById('btnMyDrive').style.background = '#4285f4';
+            folderStack = [{id: 'shared', name: 'Shared with me'}];
+            loadSharedFiles();
+        }
+
+        function loadSharedFiles() {
+            currentFolder = 'shared';
+            updateBreadcrumb();
+            document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
+            document.getElementById('btnAddFav').style.display = 'none';
+            fetch('/api/shared')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('fileList').innerHTML = '<div class="loading" style="color:#e74c3c;">Error: ' + data.error + '</div>';
+                    } else {
+                        renderFiles(data.files || []);
+                    }
+                });
+        }
+
+        // Update loadFolder to show/hide "Add to Favorites" button
+        const originalLoadFolder = loadFolder;
+        loadFolder = function(folderId, folderName) {
+            originalLoadFolder(folderId, folderName);
+            document.getElementById('btnAddFav').style.display = (folderId !== 'root' && folderId !== 'shared') ? 'inline-block' : 'none';
+        };
+
         // Load initial data
         loadFolder('root');
         loadSavedPlaylists();
+        loadFavorites();
     </script>
 </body>
 </html>
@@ -729,7 +1071,7 @@ LOGIN_TEMPLATE = """
 def index():
     if 'user_email' not in session:
         return redirect(url_for('login'))
-    return render_template_string(HTML_TEMPLATE, version=VERSION, user_email=session['user_email'])
+    return render_template_string(HTML_TEMPLATE, version=VERSION, user_email=session['user_email'], csrf_token=get_csrf_token())
 
 @app.route('/login')
 def login():
@@ -802,13 +1144,37 @@ def api_files():
             q=query,
             pageSize=100,
             fields="files(id, name, mimeType, size, modifiedTime)",
-            orderBy="folder,name"
+            orderBy="folder,name",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
         ).execute()
 
         return jsonify({'files': results.get('files', [])})
     except Exception as e:
         print(f"Error in api_files: {e}", flush=True)
         return jsonify({'error': str(e)}), 500
+
+def get_all_subfolder_ids(service, folder_id, max_depth=10):
+    """Recursively get all subfolder IDs within a folder."""
+    folder_ids = [folder_id]
+    if max_depth <= 0:
+        return folder_ids
+
+    try:
+        results = service.files().list(
+            q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            pageSize=100,
+            fields="files(id)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+
+        for folder in results.get('files', []):
+            folder_ids.extend(get_all_subfolder_ids(service, folder['id'], max_depth - 1))
+    except:
+        pass
+
+    return folder_ids
 
 @app.route('/api/search')
 @login_required
@@ -818,17 +1184,34 @@ def api_search():
         return jsonify({'error': 'Not authenticated'}), 401
 
     query_text = request.args.get('q', '')
+    folder_id = request.args.get('folder', '')
     if not query_text:
         return jsonify({'files': []})
 
-    # Search for audio files
+    # Escape single quotes to prevent query injection
+    query_text_escaped = query_text.replace("\\", "\\\\").replace("'", "\\'")
+
+    # Search for audio files (including shared drives)
     mime_conditions = " or ".join([f"mimeType='{mt}'" for mt in AUDIO_MIMETYPES])
-    query = f"name contains '{query_text}' and ({mime_conditions}) and trashed=false"
+
+    # If folder specified, search within that folder and all subfolders
+    if folder_id:
+        # Get all subfolder IDs recursively
+        all_folder_ids = get_all_subfolder_ids(service, folder_id)
+        # Build query with all folder IDs (limit to avoid query too long)
+        if len(all_folder_ids) > 50:
+            all_folder_ids = all_folder_ids[:50]  # Limit to prevent query overflow
+        parent_conditions = " or ".join([f"'{fid}' in parents" for fid in all_folder_ids])
+        query = f"name contains '{query_text_escaped}' and ({mime_conditions}) and trashed=false and ({parent_conditions})"
+    else:
+        query = f"name contains '{query_text_escaped}' and ({mime_conditions}) and trashed=false"
 
     results = service.files().list(
         q=query,
         pageSize=50,
-        fields="files(id, name, mimeType, size, modifiedTime)"
+        fields="files(id, name, mimeType, size, modifiedTime)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
     ).execute()
 
     return jsonify({'files': results.get('files', [])})
@@ -866,10 +1249,10 @@ def api_stream(file_id):
             return jsonify({'error': 'Not authenticated'}), 401
 
     # Get file metadata
-    file_meta = service.files().get(fileId=file_id, fields='name,mimeType').execute()
+    file_meta = service.files().get(fileId=file_id, fields='name,mimeType', supportsAllDrives=True).execute()
 
     # Download file
-    request_media = service.files().get_media(fileId=file_id)
+    request_media = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request_media)
     done = False
@@ -905,10 +1288,10 @@ def api_download(file_id):
         return jsonify({'error': 'Not authenticated'}), 401
 
     # Get file metadata
-    file_meta = service.files().get(fileId=file_id, fields='name,mimeType').execute()
+    file_meta = service.files().get(fileId=file_id, fields='name,mimeType', supportsAllDrives=True).execute()
 
     # Download file
-    request_media = service.files().get_media(fileId=file_id)
+    request_media = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request_media)
     done = False
@@ -924,6 +1307,7 @@ def api_download(file_id):
 
 @app.route('/api/download-playlist', methods=['POST'])
 @login_required
+@csrf_protected
 def api_download_playlist():
     """Download all files in a playlist as a ZIP with M3U."""
     from flask import Response
@@ -953,7 +1337,7 @@ def api_download_playlist():
                 file_name = track.get('name', f'{file_id}.mp3')
 
                 # Download file
-                request_media = service.files().get_media(fileId=file_id)
+                request_media = service.files().get_media(fileId=file_id, supportsAllDrives=True)
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, request_media)
                 done = False
@@ -980,6 +1364,49 @@ def api_download_playlist():
         headers={'Content-Disposition': f'attachment; filename="{playlist_name}.zip"'}
     )
 
+@app.route('/api/public-zip', methods=['POST'])
+def api_public_zip():
+    """Download publicly shared Google Drive files as a ZIP (no auth required on files)."""
+    import io
+    import zipfile
+    import requests as req
+
+    data = request.get_json()
+    tracks = data.get('tracks', [])
+    playlist_name = data.get('name', 'playlist')
+
+    if not tracks:
+        return jsonify({'error': 'No tracks provided'}), 400
+
+    zip_buffer = io.BytesIO()
+    downloaded_files = []
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for track in tracks:
+            file_id = track.get('id')
+            file_name = track.get('name', f'{file_id}.mp3')
+            url = f'https://drive.google.com/uc?export=download&id={file_id}'
+            try:
+                r = req.get(url, timeout=60, allow_redirects=True)
+                r.raise_for_status()
+                zf.writestr(file_name, r.content)
+                downloaded_files.append(file_name)
+            except Exception as e:
+                print(f"Error downloading public file {file_id}: {e}", flush=True)
+
+        m3u_content = '#EXTM3U\n'
+        for fname in downloaded_files:
+            m3u_content += f'#EXTINF:-1,{fname}\n'
+            m3u_content += f'{fname}\n'
+        zf.writestr(f'{playlist_name}.m3u', m3u_content)
+
+    zip_buffer.seek(0)
+    return Response(
+        zip_buffer.read(),
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{playlist_name}-public.zip"'}
+    )
+
 @app.route('/api/playlists', methods=['GET'])
 @login_required
 def api_get_playlists():
@@ -989,6 +1416,7 @@ def api_get_playlists():
 
 @app.route('/api/playlists', methods=['POST'])
 @login_required
+@csrf_protected
 def api_save_playlist():
     """Save a new playlist."""
     data = request.get_json()
@@ -1015,12 +1443,74 @@ def api_get_playlist(name):
 
 @app.route('/api/playlists/<name>', methods=['DELETE'])
 @login_required
+@csrf_protected
 def api_delete_playlist(name):
     """Delete a playlist."""
     playlists = load_user_playlists()
     if name in playlists:
         del playlists[name]
         save_user_playlists(playlists)
+    return jsonify({'success': True})
+
+@app.route('/api/folder-info/<folder_id>')
+@login_required
+def api_folder_info(folder_id):
+    """Get folder metadata."""
+    try:
+        service = get_drive_service()
+        if not service:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        file_meta = service.files().get(
+            fileId=folder_id,
+            fields='id,name,mimeType',
+            supportsAllDrives=True
+        ).execute()
+        return jsonify(file_meta)
+    except Exception as e:
+        print(f"Error in api_folder_info: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/shared')
+@login_required
+def api_shared():
+    """Get files shared with the user."""
+    try:
+        service = get_drive_service()
+        if not service:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        # Query for files shared with user (not owned by user)
+        query = "sharedWithMe=true and trashed=false"
+        results = service.files().list(
+            q=query,
+            pageSize=100,
+            fields="files(id, name, mimeType, size, modifiedTime)",
+            orderBy="folder,name",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+
+        return jsonify({'files': results.get('files', [])})
+    except Exception as e:
+        print(f"Error in api_shared: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/favorites', methods=['GET'])
+@login_required
+def api_get_favorites():
+    """Get favorites for current user."""
+    favorites = load_user_favorites()
+    return jsonify({'favorites': favorites})
+
+@app.route('/api/favorites', methods=['POST'])
+@login_required
+@csrf_protected
+def api_save_favorites():
+    """Save favorites for current user."""
+    data = request.get_json()
+    favorites = data.get('favorites', [])
+    save_user_favorites(favorites)
     return jsonify({'success': True})
 
 if __name__ == '__main__':
